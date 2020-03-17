@@ -1,23 +1,29 @@
 package com.example.weatherapp
 
 import android.Manifest
+import android.app.Dialog
+import android.content.DialogInterface
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
+import android.view.LayoutInflater
 import android.view.View
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.view.get
 import com.example.weatherapp.database.DatabaseHelper
 import com.example.weatherapp.forecast_view.ForecastViews
 import com.example.weatherapp.weather_objects.CurrentWeatherValues
 import com.example.weatherapp.weather_objects.ForecastWeatherValues
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import io.reactivex.rxjava3.core.Observable
@@ -47,6 +53,9 @@ class WeatherApp : AppCompatActivity() {
     private val moshi : Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private var readyToStart : Boolean = true
 
+    private var user : String ?= null
+    private var pass : String ?= null
+
     private lateinit var fusedLocationClient : FusedLocationProviderClient
     private lateinit var currWeatherStats : CurrentWeatherValues
     private var forecastWeatherStats : MutableList<ForecastWeatherValues.ForecastWeather> = ArrayList()
@@ -55,10 +64,14 @@ class WeatherApp : AppCompatActivity() {
 
     private lateinit var forecastView : ForecastViews
 
+    private lateinit var auth : FirebaseAuth
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        FirebaseApp.initializeApp(this)
+        auth = FirebaseAuth.getInstance()
         db = DatabaseHelper(this)
         calendar = Calendar.getInstance().time
         setForecastDays(calendar.toString().substring(0,3))
@@ -68,6 +81,77 @@ class WeatherApp : AppCompatActivity() {
 
         getCurrentLocation()
         setListeners()
+    }
+
+
+    override fun onStart() {
+        super.onStart()
+        val currUser = auth.currentUser
+        setFireBase(currUser)
+    }
+
+
+    override fun onPause() {
+        super.onPause()
+        FirebaseAuth.getInstance().signOut()
+    }
+
+
+    private fun setFireBase(currUser : FirebaseUser?) {
+        if(currUser == null){
+            val builder = AlertDialog.Builder(this)
+            val inflater : LayoutInflater = layoutInflater
+            val view : View = inflater.inflate(R.layout.firebase_auth, null)
+            builder.setView(view)
+                .setTitle("Login to Firebase")
+                .setPositiveButton("Sign-in") { dialogInterface, id ->
+                    val userView = view.findViewById<EditText>(R.id.username)
+                    val passView = view.findViewById<EditText>(R.id.password)
+                    if(userView.text.isNotBlank()  && passView.text.isNotBlank()){
+                        user = userView.text.toString()
+                        pass = passView.text.toString()
+                        signIntoFirebase(user!!, pass!!)
+                    } else {
+                        Log.d(TAG, "User: $user and Pass $pass are blank!")
+                    }
+                }
+                .setNegativeButton("Cancel") { dialogInterface, i ->
+                    dialogInterface.dismiss()
+                }
+                .create().show()
+        } else {
+            Toast.makeText(this, "Successfully logged in!", Toast.LENGTH_SHORT).show()
+            findViewById<TextView>(R.id.userLoginName).text = currUser.email
+        }
+
+    }
+
+    private fun signIntoFirebase(user: String, pass: String) {
+        auth.signInWithEmailAndPassword(user, pass)
+            .addOnCompleteListener(this) { task ->
+                if (task.isSuccessful) {
+                    Log.d(TAG, "signInWithEmail:success")
+                    val user = auth.currentUser
+                    findViewById<TextView>(R.id.userLoginName).text = user?.email
+                } else {
+                    Log.w(TAG, "signInWithEmail:failure", task.exception)
+                    Toast.makeText(baseContext, "Authentication failed.", Toast.LENGTH_SHORT).show()
+                }
+            }
+    }
+
+
+    private fun createFirebaseAcc(user: String, pass: String) {
+        auth.createUserWithEmailAndPassword(user, pass)
+            .addOnCompleteListener(this) { task ->
+                if (task.isSuccessful) {
+                    val user = auth.currentUser
+                    findViewById<TextView>(R.id.userLoginName).text = user?.email
+                    Toast.makeText(this, "Successfully logged in!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(baseContext, "Authentication failed.\nPlease ensure your information is correct.", Toast.LENGTH_SHORT).show()
+                }
+            }
     }
 
 
@@ -161,16 +245,25 @@ class WeatherApp : AppCompatActivity() {
     private fun saveButton(){
         val saveBtn = findViewById<LinearLayout>(R.id.save_city)
         saveBtn.setOnClickListener {
-            val saveCity = findViewById<TextView>(R.id.currentWeatherCity).text.toString()
+            val saveCity =
+            try{
+                location
+            } catch (e : Exception){
+                e.printStackTrace()
+                findViewById<TextView>(R.id.currentWeatherCity).text.toString()
+            }
             if(db.checkForCity(saveCity)){
                 if(db.insertNewCity(saveCity)){
                     setSpinnerCities()
                     Toast.makeText(this, "City added!", Toast.LENGTH_SHORT).show()
-                    //saveBtn.isSelected = true
+                    findViewById<ImageView>(R.id.star_button).isSelected = true
                 }
             } else{
-                if(db.removeCity(saveCity))
+                if(db.removeCity(saveCity)) {
+                    setSpinnerCities()
                     Toast.makeText(this, "City removed!", Toast.LENGTH_SHORT).show()
+                    findViewById<ImageView>(R.id.star_button).isSelected = false
+                }
             }
         }
     }
@@ -187,7 +280,6 @@ class WeatherApp : AppCompatActivity() {
             override fun onQueryTextSubmit(queryText: String?): Boolean {
                 location = queryText.toString()
                 if(readyToStart){
-                    //findViewById<LinearLayout>(R.id.save_city).isSelected = !db.checkForCity(location)
                     checkWeather(false, false)
                     readyToStart = false
                 }
@@ -216,7 +308,7 @@ class WeatherApp : AppCompatActivity() {
             .subscribe(
                 { onNext ->
                     setCurrentWeather(onNext as Response)
-                    setWeatherData()
+                    setWeatherData(usingCords)
                 },
                 { onError ->
                     println(onError) },
@@ -251,7 +343,7 @@ class WeatherApp : AppCompatActivity() {
     }
 
 
-    private fun setWeatherData(){
+    private fun setWeatherData(usingCords: Boolean) {
         val date = calcTime(currWeatherStats.dateTime.toString(), false)
         val city : String = currWeatherStats.cityName.toString()
         val currTemp : String = getTempAsFahrenheit((currWeatherStats.temperature?.temp!!)).toString() + resources.getString(R.string.degree_symbol) + "F"
@@ -266,6 +358,10 @@ class WeatherApp : AppCompatActivity() {
         val cloudiness : String = "${currWeatherStats.clouds?.cloudValue?.toInt()}% coverage"
         val rain : String = checkForNullRainOrSnow(currWeatherStats.rain)
         val snow : String = checkForNullRainOrSnow(currWeatherStats.snow)
+
+        if(usingCords){
+            location = city
+        }
 
         runOnUiThread{
             findViewById<TextView>(R.id.currentWeatherDate).text = date
@@ -283,6 +379,9 @@ class WeatherApp : AppCompatActivity() {
             findViewById<TextView>(R.id.currentWeatherCloudiness).text = cloudiness
             findViewById<TextView>(R.id.currentWeatherRain).text = rain
             findViewById<TextView>(R.id.currentWeatherSnow).text = snow
+
+            findViewById<ImageView>(R.id.star_button).isSelected = db.getCities().contains(location.capitalize())
+            Log.d(TAG, "Location after setting data : $location")
         }
     }
 
@@ -360,6 +459,7 @@ class WeatherApp : AppCompatActivity() {
 
 
     private fun getWeeklyForecast(usingCords: Boolean){
+        Log.d(TAG, "Location for forecast : $location")
         val apiUrl : String = when(usingCords){
             true -> forecastUrl + "lat=$lat&lon=$lng&appid=${getString(R.string._ak)}"
             false -> forecastUrl + "q=$location&appid=${getString(R.string._ak)}"
@@ -433,6 +533,9 @@ class WeatherApp : AppCompatActivity() {
     private fun displayForecast(){
         runOnUiThread{
             forecastView.weeklyForecastDisplay()
+
+            val databaseHelper : DatabaseHelper = DatabaseHelper(this)
+                //databaseHelper.getCities().contains(location.capitalize())
         }
     }
 

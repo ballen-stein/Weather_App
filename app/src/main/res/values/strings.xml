@@ -31,6 +31,8 @@
     <string name="forecast_temp">99\u00B0</string>
     <string name="forecast_date">Sun, 3/15</string>
     <string name="forecast_desc">Super heavy rain</string>
+    <string name="username">Email Address</string>
+    <string name="password">Password</string>
 
     <string name="app_label"> </string>
     <string name="search_hint"> </string>
