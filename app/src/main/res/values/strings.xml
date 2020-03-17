@@ -1,3 +1,46 @@
 <resources>
     <string name="app_name">Weather App</string>
+    <string name="search_by_text">Search By</string>
+    <string name="weather_info">Current Details</string>
+    <string name="placeholder_temp">44\u00B0F</string>
+    <string name="placeholder_feels">Feels like 41\u00B0</string>
+
+    <string name="placeholder_wind">Wind:</string>
+    <string name="placeholder_wind_value">0.0 mph</string>
+
+    <string name="placeholder_humidity">Humidity:</string>
+    <string name="placeholder_humidity_value">00%</string>
+
+    <string name="placeholder_visibility">Visibility:</string>
+    <string name="placeholder_visibility_value">0 miles</string>
+
+    <string name="placeholder_cloudiness">Cloudiness:</string>
+    <string name="placeholder_cloudiness_value">00% coverage</string>
+
+    <string name="placeholder_rain">Rain:</string>
+    <string name="placeholder_rain_value">Coverage:\n1 Hour - 0.00 in</string>
+
+    <string name="placeholder_snow">Snow:</string>
+    <string name="placeholder_snow_value">Coverage:\n1 Hour - 0.00 in</string>
+
+    <string name="placeholder_desc">Partly Sunny</string>
+    <string name="placeholder_min">L: 22</string>
+    <string name="placeholder_max">H: 33</string>
+
+    <string name="forecast_info">5 Day Forecast</string>
+    <string name="forecast_temp">99\u00B0</string>
+    <string name="forecast_date">Sun, 3/15</string>
+    <string name="forecast_desc">Super heavy rain</string>
+
+    <string name="app_label"> </string>
+    <string name="search_hint"> </string>
+    
+    <string name="degree_symbol">\u00B0</string>
+    <string name="or_text">OR</string>
+    <string name="_date">January 31, 2020</string>
+    <string name="_city">City name: </string>
+    <string name="_coordinates">Coordinates</string>
+    <string name="_longitude">Longitude</string>
+    <string name="_latitude">Latitude</string>
+    <string name="_ak">2d340ae22e4b81a8eedf2bbb3848da50</string>
 </resources>
