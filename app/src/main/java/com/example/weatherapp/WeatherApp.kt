@@ -1,15 +1,18 @@
 package com.example.weatherapp
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.util.Log
+import android.view.View
 import android.widget.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.get
+import com.example.weatherapp.database.DatabaseHelper
 import com.example.weatherapp.forecast_view.ForecastViews
 import com.example.weatherapp.weather_objects.CurrentWeatherValues
 import com.example.weatherapp.weather_objects.ForecastWeatherValues
@@ -34,6 +37,7 @@ class WeatherApp : AppCompatActivity() {
     private val forecastUrl : String = "https://api.openweathermap.org/data/2.5/forecast?"
     private lateinit var location : String
     private lateinit var calendar : Date
+    private lateinit var db : DatabaseHelper
     private val forecastDays : MutableList<String> = ArrayList()
 
     private var lng : Double ?= null
@@ -55,6 +59,7 @@ class WeatherApp : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        db = DatabaseHelper(this)
         calendar = Calendar.getInstance().time
         setForecastDays(calendar.toString().substring(0,3))
         forecastView = ForecastViews(this, forecastDays)
@@ -66,18 +71,40 @@ class WeatherApp : AppCompatActivity() {
     }
 
 
+    private fun setSpinnerCities(){
+        runOnUiThread{
+            val spinner : Spinner = findViewById(R.id.saved_searches)
+            val cityList = db.getCities()
+            val adapter : ArrayAdapter<String> = ArrayAdapter(this, android.R.layout.simple_spinner_item, cityList)
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            spinner.adapter = adapter
+            spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener{
+                override fun onNothingSelected(p0: AdapterView<*>?) {
+                    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+                }
+
+                override fun onItemSelected(adapterView : AdapterView<*>, v : View, i : Int, l : Long) {
+                    val selectedCity : String = adapterView.adapter.getItem(i).toString()
+                    if(selectedCity != ""){
+                        location = selectedCity
+                        checkWeather(false, false)
+                    }
+                }
+            }
+        }
+    }
+
+
     private fun setForecastDays(currDay : String) {
-        var nextDays : Array<String> ?= null
-        when(currDay){
-            "Mon" -> nextDays = arrayOf("Tues", "Wed", "Thurs", "Fri", "Sat")
-            "Tues"-> nextDays = arrayOf("Wed", "Thurs", "Fri", "Sat", "Sun")
-            "Wed" -> nextDays = arrayOf("Thurs", "Fri", "Sat", "Sun", "Mon")
-            "Thurs"-> nextDays = arrayOf("Fri", "Sat", "Sun", "Mon", "Tues")
-            "Fri" -> nextDays = arrayOf("Sat", "Sun", "Mon", "Tues", "Wed")
-            "Sat"-> nextDays = arrayOf("Sun", "Mon", "Tues", "Wed", "Thurs")
-            "Sun" -> nextDays = arrayOf("Mon", "Tues", "Wed", "Thurs", "Fri")
-            else ->
-                nextDays = arrayOf("Mon", "Tues", "Wed", "Thurs", "Fri")
+        val nextDays : Array<String> = when(currDay){
+            "Mon" -> arrayOf("Tues", "Wed", "Thurs", "Fri", "Sat")
+            "Tues"-> arrayOf("Wed", "Thurs", "Fri", "Sat", "Sun")
+            "Wed" -> arrayOf("Thurs", "Fri", "Sat", "Sun", "Mon")
+            "Thurs"-> arrayOf("Fri", "Sat", "Sun", "Mon", "Tues")
+            "Fri" -> arrayOf("Sat", "Sun", "Mon", "Tues", "Wed")
+            "Sat"-> arrayOf("Sun", "Mon", "Tues", "Wed", "Thurs")
+            "Sun" -> arrayOf("Mon", "Tues", "Wed", "Thurs", "Fri")
+            else -> arrayOf("Mon", "Tues", "Wed", "Thurs", "Fri")
         }
         forecastDays.addAll(nextDays)
     }
@@ -91,7 +118,7 @@ class WeatherApp : AppCompatActivity() {
                     location : Location? ->
                 if(location != null) {
                     setLongLat(location.longitude, location.latitude)
-                    checkWeather(true)
+                    checkWeather(true, true)
                 }
             }
         }
@@ -126,7 +153,26 @@ class WeatherApp : AppCompatActivity() {
 
 
     private fun setListeners(){
+        saveButton()
         searchBar()
+    }
+
+
+    private fun saveButton(){
+        val saveBtn = findViewById<LinearLayout>(R.id.save_city)
+        saveBtn.setOnClickListener {
+            val saveCity = findViewById<TextView>(R.id.currentWeatherCity).text.toString()
+            if(db.checkForCity(saveCity)){
+                if(db.insertNewCity(saveCity)){
+                    setSpinnerCities()
+                    Toast.makeText(this, "City added!", Toast.LENGTH_SHORT).show()
+                    //saveBtn.isSelected = true
+                }
+            } else{
+                if(db.removeCity(saveCity))
+                    Toast.makeText(this, "City removed!", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
 
@@ -141,7 +187,8 @@ class WeatherApp : AppCompatActivity() {
             override fun onQueryTextSubmit(queryText: String?): Boolean {
                 location = queryText.toString()
                 if(readyToStart){
-                    checkWeather(false)
+                    //findViewById<LinearLayout>(R.id.save_city).isSelected = !db.checkForCity(location)
+                    checkWeather(false, false)
                     readyToStart = false
                 }
                 return true
@@ -150,7 +197,7 @@ class WeatherApp : AppCompatActivity() {
     }
 
 
-    private fun checkWeather(usingCords : Boolean){
+    private fun checkWeather(usingCords : Boolean, justLaunched : Boolean){
         val apiUrl : String = when(usingCords){
             true -> baseUrl + "lat=$lat&lon=$lng&appid=${getString(R.string._ak)}"
             false -> baseUrl + "q=$location&appid=${getString(R.string._ak)}"
@@ -174,6 +221,8 @@ class WeatherApp : AppCompatActivity() {
                 { onError ->
                     println(onError) },
                 { getWeeklyForecast(usingCords)
+                    if(justLaunched)
+                        setSpinnerCities()
                 }
             )
     }
@@ -197,18 +246,8 @@ class WeatherApp : AppCompatActivity() {
             }
         } catch (e : Exception){
             e.printStackTrace()
+            readyToStart = true
         }
-    }
-
-
-    private fun printTestValues(weatherFromResponse: CurrentWeatherValues) {
-        println(
-            "Long : ${weatherFromResponse.coordinates?.lng} \t Lat: ${weatherFromResponse.coordinates?.lat} \t" +
-                    "\nSpeed : ${weatherFromResponse.windSpeed?.speed} \t Gust : ${weatherFromResponse.windSpeed?.gust} \t Degree : ${weatherFromResponse.windSpeed?.degree}" +
-                    "\nTemp : ${weatherFromResponse.temperature?.temp} \t Feels : ${weatherFromResponse.temperature?.feels}" +
-                    "\nVisibility : ${weatherFromResponse.visibility}" +
-                    "\nClouds : ${weatherFromResponse.clouds?.cloudValue}"
-        )
     }
 
 
@@ -279,9 +318,7 @@ class WeatherApp : AppCompatActivity() {
             "10" -> "October"
             "11" -> "November"
             "12" -> "December"
-            else -> {
-                "Couldn't Find Month"
-            }
+            else -> "Couldn't Find Month"
         }
     }
 
@@ -374,7 +411,7 @@ class WeatherApp : AppCompatActivity() {
 
 
     private fun getForecastMinMax(i: Int, s: String): Double {
-        var minMaxValue = 0.0
+        var minMaxValue = -1000.0
         if(s=="max"){
             for(k in 0..7){
                 val tempVal = forecastWeatherStats[(8*i)+k].temperature?.tempMax!!
@@ -419,5 +456,4 @@ class WeatherApp : AppCompatActivity() {
         readyToStart = true
         return tempList
     }
-
 }
