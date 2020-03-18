@@ -1,26 +1,31 @@
 package com.example.weatherapp
 
 import android.Manifest
-import android.app.Dialog
-import android.content.DialogInterface
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
+import android.view.MenuItem
 import android.view.View
 import android.widget.*
+import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.GravityCompat
+import androidx.core.view.get
+import androidx.drawerlayout.widget.DrawerLayout
 import com.example.weatherapp.database.DatabaseHelper
 import com.example.weatherapp.forecast_view.ForecastViews
 import com.example.weatherapp.weather_objects.CurrentWeatherValues
 import com.example.weatherapp.weather_objects.ForecastWeatherValues
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
+import com.google.android.material.navigation.NavigationView
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -36,7 +41,7 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
 
-class WeatherApp : AppCompatActivity() {
+class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
 
     private val client : OkHttpClient = OkHttpClient()
     private val baseUrl : String = "https://api.openweathermap.org/data/2.5/weather?"
@@ -56,6 +61,8 @@ class WeatherApp : AppCompatActivity() {
     private var user : String ?= null
     private var pass : String ?= null
 
+    private lateinit var cityList : MutableList<String>
+
     private lateinit var fusedLocationClient : FusedLocationProviderClient
     private lateinit var currWeatherStats : CurrentWeatherValues
     private var forecastWeatherStats : MutableList<ForecastWeatherValues.ForecastWeather> = ArrayList()
@@ -65,6 +72,10 @@ class WeatherApp : AppCompatActivity() {
     private lateinit var forecastView : ForecastViews
 
     private lateinit var auth : FirebaseAuth
+    private var currUser : FirebaseUser ?= null
+
+    private lateinit var drawer : DrawerLayout
+    private lateinit var toggle : ActionBarDrawerToggle
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,118 +84,169 @@ class WeatherApp : AppCompatActivity() {
         FirebaseApp.initializeApp(this)
         auth = FirebaseAuth.getInstance()
         db = DatabaseHelper(this)
+        cityList = db.getCities()
         calendar = Calendar.getInstance().time
         setForecastDays(calendar.toString().substring(0,3))
         forecastView = ForecastViews(this, forecastDays)
-
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
+        val navigationView: NavigationView = findViewById(R.id.nav_view)
+        navigationView.setNavigationItemSelectedListener(this)
+
+        val toolbar = findViewById<Toolbar>(R.id.toolbar_main)
+        setSupportActionBar(toolbar)
+
+        drawer = findViewById(R.id.drawer_layout)
+        toggle = ActionBarDrawerToggle(this, drawer, toolbar, R.string.nav_open, R.string.nav_close)
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        supportActionBar?.setHomeButtonEnabled(true)
+        supportActionBar?.setDisplayShowTitleEnabled(false)
+        drawer.addDrawerListener(toggle)
+        toggle.syncState()
+
+        setFavoriteList()
         getCurrentLocation()
         setListeners()
+        findViewById<ScrollView>(R.id.weatherScrollView).bringToFront()
+    }
+
+
+    private fun setFavoriteList(){
+        val menu = findViewById<NavigationView>(R.id.nav_view).menu.getItem(3)
+        menu.subMenu.clear()
+        cityList.clear()
+        cityList = db.getCities()
+        runOnUiThread{
+            for(i in cityList.indices){
+                menu.subMenu.add(cityList[i])
+                menu.subMenu[i].setOnMenuItemClickListener{item ->
+                    location = menu.subMenu[i].title.toString()
+                    drawer.closeDrawer(GravityCompat.START)
+                    checkWeather(false)
+                    true
+                }
+            }
+        }
+    }
+
+
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        toggle.syncState()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        toggle.onConfigurationChanged(newConfig)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem?): Boolean {
+        if (toggle.onOptionsItemSelected(item)) {
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+    override fun onNavigationItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.nav_item_one -> {
+                Toast.makeText(this, "Logging into the firebase", Toast.LENGTH_SHORT).show()
+                loginToFirebase(false)
+            }
+            R.id.nav_item_two -> {
+                FirebaseAuth.getInstance().signOut()
+                findViewById<TextView>(R.id.nav_header_textView).text = ""
+                Toast.makeText(this, "Sign out", Toast.LENGTH_SHORT).show()
+            }
+            R.id.nav_item_three -> {
+                loginToFirebase(true)
+            }
+        }
+        drawer.closeDrawer(GravityCompat.START)
+        return true
+    }
+
+
+    override fun onBackPressed() {
+        if (drawer.isDrawerOpen(GravityCompat.START)) {
+            drawer.closeDrawer(GravityCompat.START)
+        } else {
+            super.onBackPressed()
+        }
     }
 
 
     override fun onStart() {
         super.onStart()
-        val currUser = auth.currentUser
-        setFireBase(currUser)
+        currUser = auth.currentUser
     }
 
 
-    override fun onPause() {
-        super.onPause()
-        FirebaseAuth.getInstance().signOut()
-    }
-
-
-    private fun setFireBase(currUser : FirebaseUser?) {
-        if(currUser == null){
-            val builder = AlertDialog.Builder(this)
-            val inflater : LayoutInflater = layoutInflater
-            val view : View = inflater.inflate(R.layout.firebase_auth, null)
-            builder.setView(view)
-                .setTitle("Login to Firebase")
-                .setPositiveButton("Sign-in") { dialogInterface, id ->
-                    val userView = view.findViewById<EditText>(R.id.username)
-                    val passView = view.findViewById<EditText>(R.id.password)
-                    if(userView.text.isNotBlank()  && passView.text.isNotBlank()){
-                        user = userView.text.toString()
-                        pass = passView.text.toString()
-                        signIntoFirebase(user!!, pass!!)
-                    } else {
-                        Log.d(TAG, "User: $user and Pass $pass are blank!")
-                    }
-                }
-                .setNegativeButton("Cancel") { dialogInterface, i ->
-                    dialogInterface.dismiss()
-                }
-                .create().show()
+    private fun loginToFirebase(newAccount : Boolean){
+        val builder = AlertDialog.Builder(this)
+        val inflater : LayoutInflater = layoutInflater
+        val view : View = inflater.inflate(R.layout.firebase_auth, null)
+        val okButtonText = if(newAccount){
+            "Sign-up"
         } else {
-            Toast.makeText(this, "Successfully logged in!", Toast.LENGTH_SHORT).show()
-            findViewById<TextView>(R.id.userLoginName).text = currUser.email
+            "Log-in"
         }
-
+        builder.setView(view)
+            .setTitle("Login to Firebase")
+            .setPositiveButton(okButtonText) { dialogInterface, id ->
+                val userView = view.findViewById<EditText>(R.id.username)
+                val passView = view.findViewById<EditText>(R.id.password)
+                if(userView.text.isNotBlank()  && passView.text.isNotBlank()){
+                    user = userView.text.toString()
+                    pass = passView.text.toString()
+                    if(newAccount){
+                        createFirebaseAccount(user!!, pass!!)
+                    } else {
+                        signIntoFirebase(user!!, pass!!)
+                    }
+                } else {
+                    Toast.makeText(this, "Email or Password cannot be blank!", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Cancel") { dialogInterface, i ->
+                dialogInterface.dismiss()
+            }
+            .create().show()
     }
+
 
     private fun signIntoFirebase(user: String, pass: String) {
         auth.signInWithEmailAndPassword(user, pass)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    Log.d(TAG, "signInWithEmail:success")
-                    val user = auth.currentUser
-                    findViewById<TextView>(R.id.userLoginName).text = user?.email
+                    val userFromAuth = auth.currentUser
+                    findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
+                    Toast.makeText(baseContext, "Logged in successfully.", Toast.LENGTH_SHORT).show()
                 } else {
-                    Log.w(TAG, "signInWithEmail:failure", task.exception)
-                    Toast.makeText(baseContext, "Authentication failed.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(baseContext, "Failed to log in.", Toast.LENGTH_SHORT).show()
                 }
             }
     }
 
 
-    private fun createFirebaseAcc(user: String, pass: String) {
+    private fun createFirebaseAccount(user : String, pass : String){
         auth.createUserWithEmailAndPassword(user, pass)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    val user = auth.currentUser
-                    findViewById<TextView>(R.id.userLoginName).text = user?.email
-                    Toast.makeText(this, "Successfully logged in!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(baseContext, "Authentication failed.\nPlease ensure your information is correct.", Toast.LENGTH_SHORT).show()
+                    val userFromAuth = auth.currentUser
+                    findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
+                    Toast.makeText(baseContext, "Account created successfully.", Toast.LENGTH_SHORT).show()
                 }
             }
-    }
-
-
-    private fun setSpinnerCities(){
-        runOnUiThread{
-            val spinner : Spinner = findViewById(R.id.saved_searches)
-            val cityList = db.getCities()
-            val adapter : ArrayAdapter<String> = ArrayAdapter(this, android.R.layout.simple_spinner_item, cityList)
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            spinner.adapter = adapter
-            spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener{
-                override fun onNothingSelected(p0: AdapterView<*>?) {
-                    TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-                }
-
-                override fun onItemSelected(adapterView : AdapterView<*>, v : View, i : Int, l : Long) {
-                    val selectedCity : String = adapterView.adapter.getItem(i).toString()
-                    if(selectedCity != ""){
-                        location = selectedCity
-                        checkWeather(false, false)
-                    }
-                }
-            }
-        }
     }
 
 
     private fun setForecastDays(currDay : String) {
         val nextDays : Array<String> = when(currDay){
             "Mon" -> arrayOf("Tues", "Wed", "Thurs", "Fri", "Sat")
-            "Tues"-> arrayOf("Wed", "Thurs", "Fri", "Sat", "Sun")
+            "Tue"-> arrayOf("Wed", "Thurs", "Fri", "Sat", "Sun")
             "Wed" -> arrayOf("Thurs", "Fri", "Sat", "Sun", "Mon")
-            "Thurs"-> arrayOf("Fri", "Sat", "Sun", "Mon", "Tues")
+            "Thu"-> arrayOf("Fri", "Sat", "Sun", "Mon", "Tues")
             "Fri" -> arrayOf("Sat", "Sun", "Mon", "Tues", "Wed")
             "Sat"-> arrayOf("Sun", "Mon", "Tues", "Wed", "Thurs")
             "Sun" -> arrayOf("Mon", "Tues", "Wed", "Thurs", "Fri")
@@ -202,7 +264,7 @@ class WeatherApp : AppCompatActivity() {
                     location : Location? ->
                 if(location != null) {
                     setLongLat(location.longitude, location.latitude)
-                    checkWeather(true, true)
+                    checkWeather(true)
                 }
             }
         }
@@ -247,20 +309,20 @@ class WeatherApp : AppCompatActivity() {
         saveBtn.setOnClickListener {
             val saveCity =
             try{
-                location
+                location.capitalize()
             } catch (e : Exception){
                 e.printStackTrace()
-                findViewById<TextView>(R.id.currentWeatherCity).text.toString()
+                findViewById<TextView>(R.id.currentWeatherCity).text.toString().capitalize()
             }
             if(db.checkForCity(saveCity)){
                 if(db.insertNewCity(saveCity)){
-                    setSpinnerCities()
+                    setFavoriteList()
                     Toast.makeText(this, "City added!", Toast.LENGTH_SHORT).show()
                     findViewById<ImageView>(R.id.star_button).isSelected = true
                 }
             } else{
                 if(db.removeCity(saveCity)) {
-                    setSpinnerCities()
+                    setFavoriteList()
                     Toast.makeText(this, "City removed!", Toast.LENGTH_SHORT).show()
                     findViewById<ImageView>(R.id.star_button).isSelected = false
                 }
@@ -270,17 +332,16 @@ class WeatherApp : AppCompatActivity() {
 
 
     private fun searchBar(){
-        val sv = findViewById<SearchView>(R.id.city_search_view)
+        val sv = findViewById<SearchView>(R.id.searchCity)
         sv.isSubmitButtonEnabled = true
         sv.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextChange(newText: String?): Boolean {
                 return false
             }
-
             override fun onQueryTextSubmit(queryText: String?): Boolean {
                 location = queryText.toString()
                 if(readyToStart){
-                    checkWeather(false, false)
+                    checkWeather(false)
                     readyToStart = false
                 }
                 return true
@@ -289,7 +350,7 @@ class WeatherApp : AppCompatActivity() {
     }
 
 
-    private fun checkWeather(usingCords : Boolean, justLaunched : Boolean){
+        private fun checkWeather(usingCords : Boolean){
         val apiUrl : String = when(usingCords){
             true -> baseUrl + "lat=$lat&lon=$lng&appid=${getString(R.string._ak)}"
             false -> baseUrl + "q=$location&appid=${getString(R.string._ak)}"
@@ -313,8 +374,6 @@ class WeatherApp : AppCompatActivity() {
                 { onError ->
                     println(onError) },
                 { getWeeklyForecast(usingCords)
-                    if(justLaunched)
-                        setSpinnerCities()
                 }
             )
     }
@@ -381,7 +440,6 @@ class WeatherApp : AppCompatActivity() {
             findViewById<TextView>(R.id.currentWeatherSnow).text = snow
 
             findViewById<ImageView>(R.id.star_button).isSelected = db.getCities().contains(location.capitalize())
-            Log.d(TAG, "Location after setting data : $location")
         }
     }
 
@@ -459,7 +517,6 @@ class WeatherApp : AppCompatActivity() {
 
 
     private fun getWeeklyForecast(usingCords: Boolean){
-        Log.d(TAG, "Location for forecast : $location")
         val apiUrl : String = when(usingCords){
             true -> forecastUrl + "lat=$lat&lon=$lng&appid=${getString(R.string._ak)}"
             false -> forecastUrl + "q=$location&appid=${getString(R.string._ak)}"
@@ -505,7 +562,7 @@ class WeatherApp : AppCompatActivity() {
                 }
             }
         } catch (e : Exception){
-            println("Failed in the forecast because ")
+            e.printStackTrace()
         }
     }
 
@@ -533,9 +590,6 @@ class WeatherApp : AppCompatActivity() {
     private fun displayForecast(){
         runOnUiThread{
             forecastView.weeklyForecastDisplay()
-
-            val databaseHelper : DatabaseHelper = DatabaseHelper(this)
-                //databaseHelper.getCities().contains(location.capitalize())
         }
     }
 

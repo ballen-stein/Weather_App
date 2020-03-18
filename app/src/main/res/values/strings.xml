@@ -34,6 +34,9 @@
     <string name="username">Email Address</string>
     <string name="password">Password</string>
 
+    <string name="nav_open">Open</string>
+    <string name="nav_close">Close</string>
+
     <string name="app_label"> </string>
     <string name="search_hint"> </string>
     
