@@ -7,7 +7,6 @@ import android.graphics.drawable.Drawable
 import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
@@ -18,6 +17,7 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.core.view.get
 import androidx.drawerlayout.widget.DrawerLayout
 import com.example.weatherapp.database.DatabaseHelper
 import com.example.weatherapp.forecast_view.ForecastViews
@@ -97,12 +97,6 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
         setSupportActionBar(toolbar)
 
         drawer = findViewById(R.id.drawer_layout)
-
-        val menu = navigationView.menu.getItem(3)
-        for(i in cityList.indices){
-            menu.subMenu.add(cityList[i])
-        }
-
         toggle = ActionBarDrawerToggle(this, drawer, toolbar, R.string.nav_open, R.string.nav_close)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.setHomeButtonEnabled(true)
@@ -110,18 +104,31 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
         drawer.addDrawerListener(toggle)
         toggle.syncState()
 
+        setFavoriteList()
         getCurrentLocation()
         setListeners()
         findViewById<ScrollView>(R.id.weatherScrollView).bringToFront()
     }
 
-    private fun displayInformation(currWeatherStats: CurrentWeatherValues) {
-        val fragment = WeatherFragment.newInstance(currWeatherStats)
-        supportFragmentManager.beginTransaction()
-            .addToBackStack("@null")
-            .replace(R.id.info_frame, fragment)
-            .commit()
+
+    private fun setFavoriteList(){
+        val menu = findViewById<NavigationView>(R.id.nav_view).menu.getItem(3)
+        menu.subMenu.clear()
+        cityList.clear()
+        cityList = db.getCities()
+        runOnUiThread{
+            for(i in cityList.indices){
+                menu.subMenu.add(cityList[i])
+                menu.subMenu[i].setOnMenuItemClickListener{item ->
+                    location = menu.subMenu[i].title.toString()
+                    drawer.closeDrawer(GravityCompat.START)
+                    checkWeather(false)
+                    true
+                }
+            }
+        }
     }
+
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
         super.onPostCreate(savedInstanceState)
@@ -141,7 +148,6 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
     }
 
     override fun onNavigationItemSelected(item: MenuItem): Boolean {
-
         when (item.itemId) {
             R.id.nav_item_one -> {
                 Toast.makeText(this, "Logging into the firebase", Toast.LENGTH_SHORT).show()
@@ -199,7 +205,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                         signIntoFirebase(user!!, pass!!)
                     }
                 } else {
-                    Log.d(TAG, "User: $user and Pass $pass are blank!")
+                    Toast.makeText(this, "Email or Password cannot be blank!", Toast.LENGTH_LONG).show()
                 }
             }
             .setNegativeButton("Cancel") { dialogInterface, i ->
@@ -213,8 +219,8 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
         auth.signInWithEmailAndPassword(user, pass)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    val user = auth.currentUser
-                    findViewById<TextView>(R.id.nav_header_textView).text = user?.email
+                    val userFromAuth = auth.currentUser
+                    findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
                     Toast.makeText(baseContext, "Logged in successfully.", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(baseContext, "Failed to log in.", Toast.LENGTH_SHORT).show()
@@ -222,45 +228,25 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
             }
     }
 
+
     private fun createFirebaseAccount(user : String, pass : String){
         auth.createUserWithEmailAndPassword(user, pass)
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
-                    val user = auth.currentUser
-                    findViewById<TextView>(R.id.nav_header_textView).text = user?.email
+                    val userFromAuth = auth.currentUser
+                    findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
                     Toast.makeText(baseContext, "Account created successfully.", Toast.LENGTH_SHORT).show()
                 }
             }
     }
 
 
-    private fun setSpinnerCities(){
-        runOnUiThread{
-            val spinner : Spinner = findViewById(R.id.saved_searches)
-            val adapter : ArrayAdapter<String> = ArrayAdapter(this, android.R.layout.simple_spinner_item, cityList)
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            spinner.adapter = adapter
-            spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener{
-                override fun onNothingSelected(p0: AdapterView<*>?) { }
-
-                override fun onItemSelected(adapterView : AdapterView<*>, v : View, i : Int, l : Long) {
-                    val selectedCity : String = adapterView.adapter.getItem(i).toString()
-                    if(selectedCity != ""){
-                        location = selectedCity
-                        checkWeather(false, false)
-                    }
-                }
-            }
-        }
-    }
-
-
     private fun setForecastDays(currDay : String) {
         val nextDays : Array<String> = when(currDay){
             "Mon" -> arrayOf("Tues", "Wed", "Thurs", "Fri", "Sat")
-            "Tues"-> arrayOf("Wed", "Thurs", "Fri", "Sat", "Sun")
+            "Tue"-> arrayOf("Wed", "Thurs", "Fri", "Sat", "Sun")
             "Wed" -> arrayOf("Thurs", "Fri", "Sat", "Sun", "Mon")
-            "Thurs"-> arrayOf("Fri", "Sat", "Sun", "Mon", "Tues")
+            "Thu"-> arrayOf("Fri", "Sat", "Sun", "Mon", "Tues")
             "Fri" -> arrayOf("Sat", "Sun", "Mon", "Tues", "Wed")
             "Sat"-> arrayOf("Sun", "Mon", "Tues", "Wed", "Thurs")
             "Sun" -> arrayOf("Mon", "Tues", "Wed", "Thurs", "Fri")
@@ -278,7 +264,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                     location : Location? ->
                 if(location != null) {
                     setLongLat(location.longitude, location.latitude)
-                    checkWeather(true, true)
+                    checkWeather(true)
                 }
             }
         }
@@ -313,14 +299,8 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
 
 
     private fun setListeners(){
-        navBar()
         saveButton()
         searchBar()
-    }
-
-    private fun navBar(){
-        //val appBarConfiguration = AppBarConfiguration(navController.graph)
-
     }
 
 
@@ -329,20 +309,20 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
         saveBtn.setOnClickListener {
             val saveCity =
             try{
-                location
+                location.capitalize()
             } catch (e : Exception){
                 e.printStackTrace()
-                findViewById<TextView>(R.id.currentWeatherCity).text.toString()
+                findViewById<TextView>(R.id.currentWeatherCity).text.toString().capitalize()
             }
             if(db.checkForCity(saveCity)){
                 if(db.insertNewCity(saveCity)){
-                    setSpinnerCities()
+                    setFavoriteList()
                     Toast.makeText(this, "City added!", Toast.LENGTH_SHORT).show()
                     findViewById<ImageView>(R.id.star_button).isSelected = true
                 }
             } else{
                 if(db.removeCity(saveCity)) {
-                    setSpinnerCities()
+                    setFavoriteList()
                     Toast.makeText(this, "City removed!", Toast.LENGTH_SHORT).show()
                     findViewById<ImageView>(R.id.star_button).isSelected = false
                 }
@@ -358,11 +338,10 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
             override fun onQueryTextChange(newText: String?): Boolean {
                 return false
             }
-
             override fun onQueryTextSubmit(queryText: String?): Boolean {
                 location = queryText.toString()
                 if(readyToStart){
-                    checkWeather(false, false)
+                    checkWeather(false)
                     readyToStart = false
                 }
                 return true
@@ -371,7 +350,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
     }
 
 
-    private fun checkWeather(usingCords : Boolean, justLaunched : Boolean){
+        private fun checkWeather(usingCords : Boolean){
         val apiUrl : String = when(usingCords){
             true -> baseUrl + "lat=$lat&lon=$lng&appid=${getString(R.string._ak)}"
             false -> baseUrl + "q=$location&appid=${getString(R.string._ak)}"
@@ -395,8 +374,6 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                 { onError ->
                     println(onError) },
                 { getWeeklyForecast(usingCords)
-                    if(justLaunched)
-                        setSpinnerCities()
                 }
             )
     }
@@ -417,7 +394,6 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
             val weatherFromResponse = jsonAdapter.fromJson(responseBody)
             if (weatherFromResponse != null) {
                 currWeatherStats = weatherFromResponse
-                //displayInformation(currWeatherStats)
             }
         } catch (e : Exception){
             e.printStackTrace()
@@ -464,7 +440,6 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
             findViewById<TextView>(R.id.currentWeatherSnow).text = snow
 
             findViewById<ImageView>(R.id.star_button).isSelected = db.getCities().contains(location.capitalize())
-            Log.d(TAG, "Location after setting data : $location")
         }
     }
 
@@ -542,7 +517,6 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
 
 
     private fun getWeeklyForecast(usingCords: Boolean){
-        Log.d(TAG, "Location for forecast : $location")
         val apiUrl : String = when(usingCords){
             true -> forecastUrl + "lat=$lat&lon=$lng&appid=${getString(R.string._ak)}"
             false -> forecastUrl + "q=$location&appid=${getString(R.string._ak)}"
@@ -588,7 +562,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                 }
             }
         } catch (e : Exception){
-            println("Failed in the forecast because ")
+            e.printStackTrace()
         }
     }
 

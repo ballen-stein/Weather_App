@@ -53,7 +53,6 @@ class DatabaseHelper (context : Context) : SQLiteOpenHelper(context, DATABASE_NA
         val db = this.readableDatabase
         val cursor = db.rawQuery("select * from $DATABASE_NAME", null)
         val cityList : MutableList<String> = ArrayList()
-        cityList.add("")
         if(cursor.moveToFirst()){
             while (!cursor.isAfterLast){
                 val city = cursor.getString(cursor.getColumnIndex(COLUMN_CITY_NAME))
