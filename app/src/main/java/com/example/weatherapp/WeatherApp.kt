@@ -154,9 +154,13 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                 loginToFirebase(false)
             }
             R.id.nav_item_two -> {
-                FirebaseAuth.getInstance().signOut()
-                findViewById<TextView>(R.id.nav_header_textView).text = ""
-                Toast.makeText(this, "Sign out", Toast.LENGTH_SHORT).show()
+                if(currUser != null){
+                    FirebaseAuth.getInstance().signOut()
+                    findViewById<TextView>(R.id.nav_header_textView).text = ""
+                    Toast.makeText(this, "Signed out", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "You must be logged in to sign out", Toast.LENGTH_SHORT).show()
+                }
             }
             R.id.nav_item_three -> {
                 loginToFirebase(true)
@@ -222,6 +226,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                     val userFromAuth = auth.currentUser
                     findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
                     Toast.makeText(baseContext, "Logged in successfully.", Toast.LENGTH_SHORT).show()
+                    currUser = userFromAuth
                 } else {
                     Toast.makeText(baseContext, "Failed to log in.", Toast.LENGTH_SHORT).show()
                 }
@@ -236,6 +241,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                     val userFromAuth = auth.currentUser
                     findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
                     Toast.makeText(baseContext, "Account created successfully.", Toast.LENGTH_SHORT).show()
+                    currUser = userFromAuth
                 }
             }
     }
@@ -350,7 +356,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
     }
 
 
-        private fun checkWeather(usingCords : Boolean){
+    private fun checkWeather(usingCords : Boolean){
         val apiUrl : String = when(usingCords){
             true -> baseUrl + "lat=$lat&lon=$lng&appid=${getString(R.string._ak)}"
             false -> baseUrl + "q=$location&appid=${getString(R.string._ak)}"

@@ -43,7 +43,7 @@
     <string name="degree_symbol">\u00B0</string>
     <string name="or_text">OR</string>
     <string name="_date">January 31, 2020</string>
-    <string name="_city">City name: </string>
+    <string name="_city">That City</string>
     <string name="_coordinates">Coordinates</string>
     <string name="_longitude">Longitude</string>
     <string name="_latitude">Latitude</string>
