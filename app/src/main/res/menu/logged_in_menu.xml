@@ -2,10 +2,8 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <group>
-        <item android:id="@+id/nav_item_one"
-            android:title="Sign In" />
-        <item android:id="@+id/nav_item_three"
-            android:title="Create New Account" />
+        <item android:id="@+id/nav_item_two"
+            android:title="Sign Out" />
     </group>
     <item android:id="@+id/nav_item_four"
         android:title="Favorites" >

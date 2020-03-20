@@ -7,6 +7,7 @@ import android.graphics.drawable.Drawable
 import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
@@ -17,7 +18,9 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.core.view.children
 import androidx.core.view.get
+import androidx.core.view.size
 import androidx.drawerlayout.widget.DrawerLayout
 import com.example.weatherapp.database.DatabaseHelper
 import com.example.weatherapp.forecast_view.ForecastViews
@@ -33,6 +36,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.schedulers.Schedulers
+import kotlinx.android.synthetic.main.nav_header_main.view.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -40,6 +44,7 @@ import java.lang.Exception
 import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
+import kotlin.concurrent.thread
 
 class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
 
@@ -107,12 +112,11 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
         setFavoriteList()
         getCurrentLocation()
         setListeners()
-        findViewById<ScrollView>(R.id.weatherScrollView).bringToFront()
     }
 
 
     private fun setFavoriteList(){
-        val menu = findViewById<NavigationView>(R.id.nav_view).menu.getItem(3)
+        val menu = findViewById<NavigationView>(R.id.nav_view).menu.findItem(R.id.nav_item_four)
         menu.subMenu.clear()
         cityList.clear()
         cityList = db.getCities()
@@ -156,7 +160,9 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
             R.id.nav_item_two -> {
                 if(currUser != null){
                     FirebaseAuth.getInstance().signOut()
+                    currUser = null
                     findViewById<TextView>(R.id.nav_header_textView).text = ""
+                    setUser(true)
                     Toast.makeText(this, "Signed out", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "You must be logged in to sign out", Toast.LENGTH_SHORT).show()
@@ -183,6 +189,29 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
     override fun onStart() {
         super.onStart()
         currUser = auth.currentUser
+        setMenuLayout()
+    }
+
+
+    private fun setMenuLayout(){
+        findViewById<NavigationView>(R.id.nav_view).menu.clear()
+        findViewById<NavigationView>(R.id.nav_view).menu.clear()
+    }
+
+
+    private fun setUser(resetMenu : Boolean){
+        if(currUser != null && currUser?.email != null){
+            findViewById<TextView>(R.id.nav_header_textView).text = currUser?.email.toString()
+            if(resetMenu){
+                findViewById<NavigationView>(R.id.nav_view).menu.clear()
+                findViewById<NavigationView>(R.id.nav_view).inflateMenu(R.menu.logged_in_menu)
+            }
+        } else {
+            if(resetMenu){
+                findViewById<NavigationView>(R.id.nav_view).menu.clear()
+                findViewById<NavigationView>(R.id.nav_view).inflateMenu(R.menu.activity_main_drawer)
+            }
+        }
     }
 
 
@@ -224,9 +253,10 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
                     val userFromAuth = auth.currentUser
-                    findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
                     Toast.makeText(baseContext, "Logged in successfully.", Toast.LENGTH_SHORT).show()
                     currUser = userFromAuth
+                    setUser(true)
+                    setFavoriteList()
                 } else {
                     Toast.makeText(baseContext, "Failed to log in.", Toast.LENGTH_SHORT).show()
                 }
@@ -239,9 +269,10 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
             .addOnCompleteListener(this) { task ->
                 if (task.isSuccessful) {
                     val userFromAuth = auth.currentUser
-                    findViewById<TextView>(R.id.nav_header_textView).text = userFromAuth?.email
                     Toast.makeText(baseContext, "Account created successfully.", Toast.LENGTH_SHORT).show()
                     currUser = userFromAuth
+                    setUser(true)
+                    setFavoriteList()
                 }
             }
     }
@@ -617,6 +648,11 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
         forecastMax.clear()
         forecastMin.clear()
         readyToStart = true
+        if(currUser == null){
+            setUser(true)
+        } else {
+            setUser(false)
+        }
         return tempList
     }
 }
