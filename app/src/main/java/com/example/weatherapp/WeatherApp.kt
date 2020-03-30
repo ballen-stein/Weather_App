@@ -7,7 +7,6 @@ import android.graphics.drawable.Drawable
 import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
@@ -18,25 +17,20 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
-import androidx.core.view.children
 import androidx.core.view.get
-import androidx.core.view.size
 import androidx.drawerlayout.widget.DrawerLayout
 import com.example.weatherapp.database.DatabaseHelper
+import com.example.weatherapp.firebase.FirebaseConnection
 import com.example.weatherapp.forecast_view.ForecastViews
 import com.example.weatherapp.weather_objects.CurrentWeatherValues
 import com.example.weatherapp.weather_objects.ForecastWeatherValues
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.material.navigation.NavigationView
-import com.google.firebase.FirebaseApp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.schedulers.Schedulers
-import kotlinx.android.synthetic.main.nav_header_main.view.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -44,7 +38,6 @@ import java.lang.Exception
 import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
-import kotlin.concurrent.thread
 
 class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
 
@@ -76,18 +69,16 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
 
     private lateinit var forecastView : ForecastViews
 
-    private lateinit var auth : FirebaseAuth
-    private var currUser : FirebaseUser ?= null
-
     private lateinit var drawer : DrawerLayout
     private lateinit var toggle : ActionBarDrawerToggle
+
+    private var firebase : FirebaseConnection ?= null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        FirebaseApp.initializeApp(this)
-        auth = FirebaseAuth.getInstance()
+        firebase = FirebaseConnection(this)
         db = DatabaseHelper(this)
         cityList = db.getCities()
         calendar = Calendar.getInstance().time
@@ -115,7 +106,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
     }
 
 
-    private fun setFavoriteList(){
+    fun setFavoriteList(){
         val menu = findViewById<NavigationView>(R.id.nav_view).menu.findItem(R.id.nav_item_four)
         menu.subMenu.clear()
         cityList.clear()
@@ -158,10 +149,10 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                 loginToFirebase(false)
             }
             R.id.nav_item_two -> {
-                if(currUser != null){
-                    FirebaseAuth.getInstance().signOut()
-                    currUser = null
+                if(firebase?.getCurrUser() != null){
                     findViewById<TextView>(R.id.nav_header_textView).text = ""
+                    firebase?.signOutFirebase()
+                    firebase?.setFirebaseUser(null)
                     setUser(true)
                     Toast.makeText(this, "Signed out", Toast.LENGTH_SHORT).show()
                 } else {
@@ -188,27 +179,26 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
 
     override fun onStart() {
         super.onStart()
-        currUser = auth.currentUser
+        firebase?.getCurrUser()
         setMenuLayout()
     }
 
 
     private fun setMenuLayout(){
         findViewById<NavigationView>(R.id.nav_view).menu.clear()
-        findViewById<NavigationView>(R.id.nav_view).menu.clear()
     }
 
 
-    private fun setUser(resetMenu : Boolean){
-        if(currUser != null && currUser?.email != null){
-            findViewById<TextView>(R.id.nav_header_textView).text = currUser?.email.toString()
+    fun setUser(resetMenu : Boolean){
+        if(firebase?.getCurrUser() != null && firebase?.getCurrUser()!!.email != null){
+            findViewById<TextView>(R.id.nav_header_textView).text = firebase?.getCurrUser()!!.email.toString()
             if(resetMenu){
-                findViewById<NavigationView>(R.id.nav_view).menu.clear()
+                setMenuLayout()
                 findViewById<NavigationView>(R.id.nav_view).inflateMenu(R.menu.logged_in_menu)
             }
         } else {
             if(resetMenu){
-                findViewById<NavigationView>(R.id.nav_view).menu.clear()
+                setMenuLayout()
                 findViewById<NavigationView>(R.id.nav_view).inflateMenu(R.menu.activity_main_drawer)
             }
         }
@@ -233,9 +223,9 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                     user = userView.text.toString()
                     pass = passView.text.toString()
                     if(newAccount){
-                        createFirebaseAccount(user!!, pass!!)
+                        firebase?.createFirebaseAccount(user!!, pass!!)
                     } else {
-                        signIntoFirebase(user!!, pass!!)
+                        firebase?.signIntoFirebase(user!!, pass!!)
                     }
                 } else {
                     Toast.makeText(this, "Email or Password cannot be blank!", Toast.LENGTH_LONG).show()
@@ -245,36 +235,6 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
                 dialogInterface.dismiss()
             }
             .create().show()
-    }
-
-
-    private fun signIntoFirebase(user: String, pass: String) {
-        auth.signInWithEmailAndPassword(user, pass)
-            .addOnCompleteListener(this) { task ->
-                if (task.isSuccessful) {
-                    val userFromAuth = auth.currentUser
-                    Toast.makeText(baseContext, "Logged in successfully.", Toast.LENGTH_SHORT).show()
-                    currUser = userFromAuth
-                    setUser(true)
-                    setFavoriteList()
-                } else {
-                    Toast.makeText(baseContext, "Failed to log in.", Toast.LENGTH_SHORT).show()
-                }
-            }
-    }
-
-
-    private fun createFirebaseAccount(user : String, pass : String){
-        auth.createUserWithEmailAndPassword(user, pass)
-            .addOnCompleteListener(this) { task ->
-                if (task.isSuccessful) {
-                    val userFromAuth = auth.currentUser
-                    Toast.makeText(baseContext, "Account created successfully.", Toast.LENGTH_SHORT).show()
-                    currUser = userFromAuth
-                    setUser(true)
-                    setFavoriteList()
-                }
-            }
     }
 
 
@@ -648,7 +608,7 @@ class WeatherApp : AppCompatActivity(), NavigationView.OnNavigationItemSelectedL
         forecastMax.clear()
         forecastMin.clear()
         readyToStart = true
-        if(currUser == null){
+        if(firebase?.getCurrUser() == null){
             setUser(true)
         } else {
             setUser(false)
